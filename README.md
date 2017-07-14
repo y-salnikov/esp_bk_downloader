@@ -6,6 +6,11 @@
 
 
 ![Прототип устройства](https://github.com/y-salnikov/esp_bk_downloader/blob/master/img/proto.jpg?raw=true)
+Прототип устройства.
+
+
+![Схема](https://github.com/y-salnikov/esp_bk_downloader/blob/master/img/schematic.png?raw=true)
+Схема.
 
 
 При старте устройство подключается к вашему WiFi роутеру и выступает в роле web-сервера.
