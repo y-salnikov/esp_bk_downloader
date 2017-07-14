@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+ <head>
+  <meta charset="utf-8">
+  <title>ESP BK Downloader</title>
+  <style>
+  </style>
+ </head>
+ <style>
+ 	#input_div
+ 	{
+ 		background-color: #EEDDFF;
+ 		border: 1px solid black;
+ 		padding: 30px;
+ 	}
+	#controls
+	{
+		visibility:hidden;
+		background-color: #D0DFD0;
+		border: 1px solid black;
+		border-radius: 15px;
+		padding: 30px;
+	}
+</style>
+ <body>
+ 	<div id="input_div">
+ 		<input type="file" id="files" name="files[]" />
+		<div id="controls">
+			Имя файла:<input id="fn_txt" type="text"> <button type="button" onclick="clear_name()">Очистить</button> <br>
+			Адрес загрузки(8): <input id="adr_txt" type="text"> <br>
+			Длина данных: <input id="length_txt" type="text" readonly> <br>
+			Автозапуск: <input id="autostart" type="checkbox"> <br>
+			<center><button id="start_button" type="button" onclick="start_download()" disabled> Начать загрузку </button></center>
+		</div>
+	</div>
+
+
+
+
+
+<script type="text/javascript">
+ 	var stored_name="";
+ 	var data=[];
+ 		function handleFileSelect(evt) 
+ 		{
+    			var files = evt.target.files; // FileList object
+
+    			// files is a FileList of File objects. List some properties.
+    			var output = [];
+    			for (var i = 0, f; f = files[i]; i++)
+    			{
+      				stored_name=f.name.toUpperCase();
+      				
+    			}
+    			var p=document.getElementById("controls");
+    			p.style.display="block";
+    			p.style.visibility="visible";
+    			load_file(files);
+ 			
+  		}
+  		document.getElementById('files').addEventListener('change', handleFileSelect, false);
+ 	
+ 	function load_file(files)
+ 	{
+ 		var f=files[0];
+ 		var myReader = new FileReader();
+ 		myReader.onload = function(event)
+ 		{
+ 			var data=new Uint8Array((myReader.result));
+ 			var arr=Array.prototype.slice.call(data);
+ 			window.data=arr;
+ 			var adr=window.data[0]+(window.data[1]*256);
+ 			var l=window.data[2]+(window.data[3]*256);
+ 			document.getElementById("start_button").disabled=false;
+ 			document.getElementById("fn_txt").value=stored_name;
+ 			document.getElementById("adr_txt").value=adr.toString(8);
+ 			document.getElementById("length_txt").value=l;
+ 			if(adr<512)
+ 			{
+ 				document.getElementById("autostart").checked=true;
+ 				document.getElementById("autostart").disabled=true;
+ 			}
+ 			if(adr>512)
+ 			{
+  				document.getElementById("autostart").checked=false;
+ 				document.getElementById("autostart").disabled=true;
+  			}
+ 			if(adr==512)
+ 			{
+  				document.getElementById("autostart").checked=false;
+ 				document.getElementById("autostart").disabled=false; 				
+ 			}
+		};
+ 		myReader.readAsArrayBuffer(f);
+ 	}
+ 	
+ 	function clear_name()
+ 	{
+ 		document.getElementById("fn_txt").value="";
+ 	}
+ 	
+ 	function start_download()
+ 	{
+ 		var d=window.data;
+ 		send_file(d);
+ 	}
+ 	
+ 	function send_file(dat)
+ 	{
+ 		var chunksize=64;
+ 		var chunks=Math.ceil(dat.length/chunksize);
+ 		var remain=dat.length;
+ 		var adr=parseInt(document.getElementById("adr_txt").value,8);
+ 		if (adr.isNaN) adr=512;
+ 		var l=parseInt(document.getElementById("length_txt").value,10);
+ 		var d=dat.slice(4,dat.length);
+ 		if((document.getElementById("autostart").checked==true) && (adr==512))
+ 		{
+ 			d=[0,2,0,2,0,2,0,2,0,2,0,2,0,2,0,2];
+ 			d=d.concat(dat.slice(4,dat.length));
+ 			adr=adr-16;
+ 			l=l+16;
+ 		}
+ 		var name=document.getElementById("fn_txt").value;
+ 		send_header(adr,l,name);
+ 		
+ 		for(var i=0;i<chunks;i++)
+ 		{
+ 			var bytes_to_send=chunksize;
+ 			if(remain<chunksize) bytes_to_send=remain;
+ 			var dd=d.slice(i*chunksize,(i*chunksize)+bytes_to_send)
+ 			remain=remain-bytes_to_send;
+ 			send_chunk(dd);
+ 		}
+ 		send_end();
+ 		document.getElementById("controls").style.visibility="hidden";
+ 		
+ 	}
+ 	
+ 	function send_chunk(d)
+ 	{
+ 		var params=encodeURI("data="+'"'+JSON.stringify(d)+'"');
+ 		var dummy="";
+ 		var xhr = new XMLHttpRequest();
+ 		xhr.open("GET","data?"+params,false);
+ 		xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+		xhr.send(dummy);
+ 	}
+ 	
+ 	function send_header(adr,length,name)
+ 	{
+ 		var params=encodeURI('adr='+adr+'&length='+length+'&name="'+name.toUpperCase()+'"');
+ 		var dummy="";
+ 		var xhr = new XMLHttpRequest();
+ 		xhr.open("GET","header?"+params,false);
+ 		xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+		xhr.send(dummy);
+ 	}
+ 	function send_end()
+ 	{
+ 		var dummy="";
+ 		var xhr = new XMLHttpRequest();
+ 		xhr.open("GET","end?end=1",true);
+ 		xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+		xhr.send(dummy);
+ 	}
+ 	
+ 	</script>
+
+
+ </body>
+</html>
