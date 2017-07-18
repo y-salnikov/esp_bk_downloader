@@ -23,8 +23,18 @@
 #define OUT1 gpio_output_set( BIT13, 0, BIT13, 0)
 #define DELAY0 ets_delay_us(du)
 #define DELAY1 ets_delay_us(du*2)
+#define GPIO_0(BIT) gpio_output_set(0,BIT,BIT,0)
+#define GPIO_1(BIT) gpio_output_set(BIT,0,BIT,0)
+
+#define JOY0 BIT2
+#define JOY1 BIT4
+#define JOY2 BIT5
+#define JOY3 BIT12
+#define JOY4 BIT14
+#define JOY5 BIT16
 
 
+void FLASH gpio16(uint8_t b);
 const uint8 response_ok[] ICACHE_RODATA_ATTR = "HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n";
 const uint8 response_html[] ICACHE_RODATA_ATTR = "HTTP/1.1 200 OK\r\nServer: ESP8266\r\nContent-Type: text/html\r\n\r\n";
 char name[17];
@@ -36,6 +46,7 @@ uint16_t data_crc;
 char sending=0;
 unsigned int html_idx,html_to_send;
 volatile uint32_t du=DELAY_US;
+uint8_t joy_state=0;
 
 os_event_t startServer_Queue[startServer_QueueLen];
 
@@ -280,6 +291,40 @@ static void FLASH  connectionCallback(void *arg)
 //    espconn_disconnect(pCon);
 }
 
+static void FLASH set_joy(uint8_t bits)
+{
+	if(bits & 0x01) GPIO_1(JOY0); else GPIO_0(JOY0);
+	if(bits & 0x02) GPIO_1(JOY1); else GPIO_0(JOY1);
+	if(bits & 0x04) GPIO_1(JOY2); else GPIO_0(JOY2);
+	if(bits & 0x08) GPIO_1(JOY3); else GPIO_0(JOY3);
+	if(bits & 0x10) GPIO_1(JOY4); else GPIO_0(JOY4);
+	if(bits & 0x20) gpio16(1); else gpio16(0);
+}
+
+static void FLASH udpRecvCallback(void *arg, char *pusrdata, unsigned short length)
+{
+	uint8_t b;
+	struct espconn *pCon = arg;
+	
+		b=pusrdata[0];
+		set_joy(b);
+	espconn_sent(pCon, NULL,0);
+}
+
+static void  FLASH start_udp_server(void)
+{
+	struct espconn *pCon = NULL;
+    	pCon = (struct espconn *)os_zalloc(sizeof(struct espconn));
+    	ets_memset(pCon, 0, sizeof(struct espconn));
+    	pCon->type = ESPCONN_UDP;
+    	pCon->state = ESPCONN_NONE;
+    	pCon->proto.udp = (esp_udp *)os_zalloc(sizeof(esp_udp));
+    	pCon->proto.udp->local_port = 33333;
+//    	espconn_regist_connectcb(pCon, UDPconnectionCallback);
+	espconn_regist_recvcb(pCon, udpRecvCallback);
+	espconn_create(pCon);
+}
+
 static void  FLASH startServer(os_event_t *events){
     struct espconn *pCon = NULL;
     pCon = (struct espconn *)os_zalloc(sizeof(struct espconn));
@@ -293,16 +338,26 @@ static void  FLASH startServer(os_event_t *events){
     espconn_regist_connectcb(pCon, connectionCallback);
     // Start listening
     espconn_accept(pCon);
-    // After 15 seconds close TCP connection
     espconn_regist_time(pCon, 9999, 0);
+    start_udp_server();
+}
+
+void FLASH gpio16(uint8_t b)
+{
+	uint32_t val;
+	// set the pin state first, then enable output
+	val = READ_PERI_REG(RTC_GPIO_OUT);
+	WRITE_PERI_REG(RTC_GPIO_OUT, b ? (val | 1) : (val & ~1));
+	val = READ_PERI_REG(RTC_GPIO_ENABLE);
+	WRITE_PERI_REG(RTC_GPIO_ENABLE, val | 1);
 }
 
 
 void FLASH  user_init()
 {
-	const char ssid[32] = "<your wifi sid>";
-	const char password[32] = "<your password>";
-
+	const char ssid[32] = "<sid name>";
+	const char password[32] = "********";
+	uint32_t val;
 	struct station_config stationConf;
 	uart_div_modify(0, UART_CLK_FREQ / 115200);
 	os_printf("\n");
@@ -316,6 +371,26 @@ void FLASH  user_init()
   // init gpio sussytem
   gpio_init();
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U, FUNC_GPIO13);
+  //joystick gpios
+  PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO2_U, FUNC_GPIO2);
+  PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO4_U, FUNC_GPIO4);
+  PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO5_U, FUNC_GPIO5);
+  PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U, FUNC_GPIO12);
+  PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTMS_U, FUNC_GPIO14);
+
+	GPIO_0(JOY0);
+	GPIO_0(JOY1);
+	GPIO_0(JOY2);
+	GPIO_0(JOY3);
+	GPIO_0(JOY4);
+  
+  // map GPIO16 as an I/O pin
+	val = READ_PERI_REG(PAD_XPD_DCDC_CONF) & 0xffffffbc;
+	WRITE_PERI_REG(PAD_XPD_DCDC_CONF, val | 0x00000001);
+	val = READ_PERI_REG(RTC_GPIO_CONF) & 0xfffffffe;
+	WRITE_PERI_REG(RTC_GPIO_CONF, val | 0x00000000);
+	gpio16(0);
+  
   ets_wdt_disable();
   
   system_os_task(startServer, startServer_Prio, startServer_Queue, startServer_QueueLen);
